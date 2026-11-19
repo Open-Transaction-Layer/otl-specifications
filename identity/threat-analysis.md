@@ -2,7 +2,7 @@
 
 - **Status:** Draft for review
 - **Scope:** OTL Identity layer (Layer 1): did:webvh / did:web identifiers, W3C Verifiable Credentials, Bitstring Status List revocation, trust anchor management
-- **Based on:** OTL Identity Layer Technical Specification v0.6 and the did:webvh DID Method Specification v1.0
+- **Based on:** OTL Identity Layer Technical Specification v0.7 and the did:webvh DID Method Specification v1.0
 - **Date:** November 2026
 
 ---
@@ -127,7 +127,7 @@ Each threat lists the attacker classes involved, the attack, its impact, mitigat
 - **Attacker:** A3, A4, A6
 - **Attack:** did:webvh allows an `updateKeys` key to also appear as a `verificationMethod`. A key used for routine signing is then also the identity's master key.
 - **Recommendation:** The DID Management Key MUST NOT appear in any verification relationship, and no key may serve more than one OTL purpose. Verifiers SHOULD reject DIDs that violate this.
-- **Spec status:** Partly addressed. §3.2.1 makes the credential signing key exclusive to credentials, but nothing forbids the DID Management Key from also appearing in a verification relationship.
+- **Spec status:** Partly addressed. §3.2.1 makes the credential signing key exclusive to credentials, and §3.3 declares purpose only through verification relationships and requires each layer-defined relationship to state which other relationships may share its keys. Nothing yet forbids the DID Management Key from also appearing in a verification relationship, and no rule yet governs reuse between `authentication` and `keyAgreement`.
 
 #### T-DID-05 — Rotation back to a previously used key — **M**
 
@@ -219,7 +219,7 @@ Each threat lists the attacker classes involved, the attack, its impact, mitigat
 
 - **Attacker:** A6, or availability failure
 - **Attack:** §3.3 says a key is valid only while present in the *current* DID document. Rotating the credential signing key out of `assertionMethod` invalidates every credential and status list it ever signed. If verifiers instead accepted the historical version, a holder of a compromised signing key could backdate `validFrom`.
-- **Spec status:** Addressed in §3.2.1. Credentials and status lists are verified against the issuer's current DID document only. In a planned rotation the issuer keeps both keys listed until all credentials and status lists are re-signed. On compromise the key is replaced with no overlap, and everything it signed is invalid until re-issued. §3.3 is unchanged and does not mention credential signing keys.
+- **Spec status:** Addressed in §3.2.1. Credentials and status lists are verified against the issuer's current DID document only. In a planned rotation the issuer keeps both keys listed until all credentials and status lists are re-signed. On compromise the key is replaced with no overlap, and everything it signed is invalid until re-issued. §3.3 states the same current-version rule for every verification relationship.
 
 #### T-VC-03 — Expiry not enforced by verifiers — **M**
 

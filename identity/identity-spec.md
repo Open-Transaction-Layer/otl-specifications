@@ -5,8 +5,8 @@
 **did:webvh & DID Document Structure · Verifiable Credentials & Bitstring Status List Revocation · Trust Anchor Management**
 
 - **Status:** Draft
-- **Version:** 0.6
-- **Date:** October 20, 2026
+- **Version:** 0.7
+- **Date:** November 19, 2026
 - **Layer:** 1 — Identity
 
 ---
@@ -86,6 +86,7 @@ The DID document is a JSON-LD document. For did:webvh it is the `state` of the l
 | `https://w3id.org/security/suites/ed25519-2020/v1` | Ed25519VerificationKey2020 | Any verificationMethod entry in the document uses Ed25519 |
 | `https://w3id.org/security/suites/jws-2020/v1` | JsonWebKey2020 (P-256 only, §3.1.1) | Any verificationMethod or keyAgreement entry uses a P-256 key — for signing, or for ECDH key agreement |
 | `https://w3id.org/security/suites/x25519-2020/v1` | X25519KeyAgreementKey2020 | Any keyAgreement entry uses X25519 |
+| Context of the defining layer | — (layer-defined verification relationship, §3.3) | The document uses a verification relationship that a layer other than DID Core defines |
 
 #### 3.1.1 Cryptographic Agility
 
@@ -110,11 +111,11 @@ A verifier MUST reject any signature made with a key of another type or curve, a
 
 A key that fails validation is treated as no key at all.
 
-> **Note:** Post-quantum key agreement (e.g. ML-KEM) is anticipated but not specified here: no ratified JOSE/JWK or Data-Integrity representation for ML-KEM existed at the time of this draft. Once one is standardized, it will be added as a further optional keyAgreement key type under the same agility principle (see §8); participants and verifiers are not expected to implement it before then.
+> **Note:** Post-quantum key agreement (e.g. ML-KEM) is anticipated but not specified here: no ratified JOSE/JWK or Data-Integrity representation for ML-KEM existed at the time of this draft. Once one is standardized, it will be added as a further optional keyAgreement key type under the agility principle of this section; participants and verifiers are not expected to implement it before then.
 
 ### 3.2 Key Inventory
 
-This inventory covers only keys the Identity layer itself defines and governs. Other layers define and reuse additional keys — for example, a general-purpose message-signing key or encryption keys for a specific application protocol — using the same DID-document mechanics (§3.1–§3.3), and are out of scope for this table.
+This inventory covers only keys the Identity layer itself defines and governs. Other layers define and reuse additional keys — for example, a general-purpose message-signing key or encryption keys for a specific application protocol — using the same DID-document mechanics (§3.1–§3.3), and are out of scope for this table. Each key's purpose is declared by the verification relationships that reference it, never by its `id` (§3.3).
 
 | Key | Type | Holder | Status | Purpose |
 |---|---|---|---|---|
@@ -183,9 +184,56 @@ Illustrative shape of a did:webvh log entry (exact parameter encoding follows th
 }
 ```
 
-### 3.3 `authentication` and `assertionMethod`
+### 3.3 Verification Relationships
 
-A key reference is valid for the `authentication` or `assertionMethod` purpose only while it is present in the current DID document version. Removing a reference in a later version revokes that purpose for the key going forward, without deleting the underlying key material from the version-log history (§2.3).
+A DID document declares what each key may be used for through its verification relationships (DID Core §5.3): a key may be used for a purpose only if the relationship for that purpose references it. This applies to every key in the document, whether this specification or another layer defines it.
+
+**Key identifiers carry no meaning.** The `id` of a verification method, including its fragment, is an arbitrary identifier chosen by the DID controller. Implementations MUST NOT infer a key's purpose from its `id`, and MUST NOT locate the key for a purpose by a predefined `id` or fragment. A party that needs a key for a purpose reads it from the matching relationship. A party that receives a proof reads the key from the proof's `verificationMethod` and checks that the matching relationship references it.
+
+**Relationships.** The Identity layer uses three relationships defined by DID Core:
+
+| Relationship | Purpose | `proofPurpose` |
+|---|---|---|
+| `assertionMethod` | Signing verifiable credentials and status lists (§3.2.1, §5.2) | `"assertionMethod"` |
+| `authentication` | Signing presentations (§4.4, §6.3), and the participant's general-purpose signing key wherever another layer does not define a dedicated relationship | `"authentication"` |
+| `keyAgreement` | Key agreement for encryption to the participant (§3.1.1) | — (not used for proofs) |
+
+Other layers MAY define further relationships for purposes of their own (see *Layer-defined relationships* below).
+
+**Several keys per purpose.** A relationship MAY reference any number of keys, and every key it references is valid for that purpose. This is what allows a rotation to overlap old and new keys (§3.2.1), and a participant to publish keys of different types for the same purpose (§3.1.1). Where a party must choose one of several keys for a purpose — for example an encrypting party choosing among a recipient's `keyAgreement` keys — it MAY use any referenced key whose type it supports, unless the layer that defines the operation specifies a stricter rule.
+
+**Validity.** A key reference is valid for a purpose only while that relationship references it in the current DID document version. Removing a reference in a later version revokes that purpose for the key going forward, without deleting the underlying key material from the version-log history (§2.3).
+
+**Proof binding.** A proof's `proofPurpose` MUST be the name of the relationship for the purpose the signed document serves. A verifier MUST reject a proof unless its `proofPurpose` is the one the document type requires and the relationship of that name in the signer's current DID document references the proof's `verificationMethod` (§6.3).
+
+Example, for a credential issuer that is rotating its credential signing key and publishes both an X25519 and a P-256 key agreement key:
+
+```json
+{
+  "assertionMethod": [
+    "did:webvh:lou.example#vc-key-1",
+    "did:webvh:lou.example#vc-key-2"
+  ],
+  "authentication": ["did:webvh:lou.example#sig-key-1"],
+  "keyAgreement": [
+    "did:webvh:lou.example#ka-key-1",
+    "did:webvh:lou.example#ka-key-2"
+  ]
+}
+```
+
+The fragments above are illustrative only; any other values would have the same meaning.
+
+#### Layer-defined relationships
+
+DID Core permits additional verification relationships. A layer MAY define one for a purpose that no DID Core relationship covers — for example, a key for application-level encryption outside the transport protocol. A layer SHOULD NOT define a relationship for a purpose that a DID Core relationship already covers, such as signing credentials (`assertionMethod`), signing presentations or messages (`authentication`), or transport key agreement (`keyAgreement`), so that documents stay verifiable by generic W3C tooling. A layer-defined relationship:
+
+1. MUST have a name that does not redefine a DID Core or Data Integrity term.
+2. MUST be defined as a JSON-LD term in a published, versioned context, with `"@type": "@id"` and `"@container": "@set"`, as DID Core defines its own relationships. A JSON-LD consumer drops a property that no context defines, so without a definition the relationship would be visible to some verifiers and not to others.
+3. Where proofs for that purpose are Data Integrity proofs, MUST be used as their `proofPurpose`. Data Integrity resolves the `proofPurpose` value as a term, so every such signed document MUST also include the defining context, and the term MUST expand to the same IRI in the DID document and in the proof. Where proofs are in another format that carries only a key reference, such as a JWS `kid` or an HTTP Message Signature `keyid`, the verifier MUST check that the relationship references that key.
+4. MUST state which other relationships, if any, may reference the same key (§3.2.1 already forbids reuse under `assertionMethod`).
+
+A DID document that uses a layer-defined relationship MUST include its defining context in `@context` (§3.1). The published content of a context version MUST NOT change once any document references it; a change requires a new version. Verifiers SHOULD use local copies of the contexts they support rather than retrieving them at verification time.
 
 ### 3.4 `portability`
 
@@ -594,7 +642,7 @@ where `unsecuredDocument` is the document with the `proof` field removed, and `p
 | `cryptosuite` | `eddsa-jcs-2022` for an Ed25519 signing key, or `ecdsa-jcs-2019` for a P-256 (JsonWebKey2020) signing key — whichever the signer's key type is (§3.1.1). A verifier MUST reject a proof whose cryptosuite does not match the key type, or is neither of these. |
 | `created` | ISO 8601 creation timestamp |
 | `verificationMethod` | Key reference: on a VC, a key reference under the issuer's DID that is listed in the issuer's `assertionMethod` (§3.2.1) — the Identity layer mandates a dedicated key for this purpose. On a VP, the key reference is under the holder's DID (the VP `holder` field) and MUST be listed in the holder's `authentication`. Which signing key the holder uses for presentations is defined by whichever other layer specifies the holder's general-purpose signing key, not by this specification. |
-| `proofPurpose` | `"assertionMethod"` on a VC; `"authentication"` on a VP. A verifier MUST reject a proof whose `proofPurpose` is not the one its document type requires, and MUST require the key to be referenced from the matching relationship in the signer's DID document. |
+| `proofPurpose` | `"assertionMethod"` on a VC; `"authentication"` on a VP; on a document another layer defines, the relationship that layer specifies for it (§3.3). A verifier MUST reject a proof whose `proofPurpose` is not the one its document type requires, and MUST require the key to be referenced from the relationship of that name in the signer's current DID document (§3.3). |
 | `proofValue` | Multibase base58btc string (`z`-prefix) of the raw signature — 64 bytes for Ed25519. |
 
 ---
